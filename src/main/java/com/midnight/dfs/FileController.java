@@ -1,20 +1,22 @@
 package com.midnight.dfs;
 
-import com.midnight.dfs.syncer.FileSyncer;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.util.DigestUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.*;
-import java.net.URLEncoder;
-import java.util.UUID;
+
+import static com.midnight.dfs.FileUtils.getMimeType;
+import static com.midnight.dfs.FileUtils.getUUIDFile;
+import static com.midnight.dfs.HttpSyncer.XFILENAME;
 
 @RestController
 @Slf4j
@@ -30,30 +32,50 @@ public class FileController {
     private String backupUrl;
 
     @Autowired
-    FileSyncer syncer;
+    HttpSyncer syncer;
+
+    @Value("${mdfs.autoMd5}")
+    private boolean autoMd5;
+
 
     @SneakyThrows
     @PostMapping("/upload")
     public String upload(@RequestParam MultipartFile file, HttpServletRequest request) {
-        String name = file.getOriginalFilename();
-        String ext = name.substring(name.lastIndexOf("."));
-
-        String filename = request.getHeader("X-Filename");
+        String filename = request.getHeader(XFILENAME);
         boolean sync = false;
         if (filename == null || filename.isEmpty()) {
-            filename = UUID.randomUUID() + ext;
+            filename = getUUIDFile(file.getOriginalFilename());
             sync = true;
         }
 
-        String dir = filename.substring(0, 2);
+        String subdir = FileUtils.getSubdir(filename);
 
-        String path = uploadPath + "/" + dir + "/" + filename;
+        String path = uploadPath + "/" + subdir + "/" + filename;
         log.info("====> path " + path);
         File dest = new File(path);
         file.transferTo(dest);
 
+        // 2. 处理meta
+        FileMeta meta = new FileMeta();
+        meta.setName(filename);
+        meta.setOriginalFileName(file.getOriginalFilename());
+        meta.setSize(file.getSize());
+        if (autoMd5) {
+            meta.getTags().put("md5", DigestUtils.md5DigestAsHex(new FileInputStream(dest)));
+        }
+
+        // 2.1 存放到本地文件
+        String metaName = filename + ".meta";
+        File metaFile = new File(uploadPath + "/" + subdir + "/" + metaName);
+        FileUtils.writeMeta(metaFile, meta);
+
+        // 2.2 存到数据库
+        // 2.3 存放到配置中心或注册中心，比如zk
+
+        // 3. 同步到backup
+        // 同步文件到backup
         if (sync) {
-            syncer.sync(dest, backupUrl, isSync);
+            syncer.sync(dest, backupUrl);
         }
 
         return filename;
@@ -61,29 +83,30 @@ public class FileController {
 
     @PostMapping("/download")
     public void download(String name, HttpServletResponse response) throws IOException {
-        String dir = name.substring(0, 2);
-        String path = uploadPath + "/" + dir + "/" + name;
+        String subdir = FileUtils.getSubdir(name);
+        String path = uploadPath + "/" + subdir + "/" + name;
+        File file = new File(path);
+        try {
+            FileInputStream inputStream = new FileInputStream(file);
+            InputStream fis = new BufferedInputStream(inputStream);
+            byte[] buffer = new byte[16 * 1024];
 
-        File file = new File(name);
-        String filename = file.getName();
-        FileInputStream fis = new FileInputStream(file);
-        BufferedInputStream bufferStream = new BufferedInputStream(fis);
+            // 加一些response的头
+            response.setCharacterEncoding("UTF-8");
+            // response.setContentType("application/octet-stream");
+            response.setContentType(getMimeType(name));
+            // response.setHeader("Content-Disposition", "attachment;filename=" + name);
+            response.setHeader("Content-Length", String.valueOf(file.length()));
 
-        byte[] buffer = new byte[16 * 1024];
-
-        response.setCharacterEncoding("UTF-8");
-        response.addHeader("Content-Disposition", "attachment;filename="
-                + URLEncoder.encode(filename, "UTF-8"));
-        response.addHeader("Content-Length", "" + file.length());
-        response.setContentType("application/octet-stream");
-
-        OutputStream outputStream = new BufferedOutputStream(response.getOutputStream());
-
-        while (bufferStream.read(buffer) > 0) {
-            outputStream.write(buffer);
+            // 读取文件信息，并逐段输出
+            OutputStream outputStream = response.getOutputStream();
+            while (fis.read(buffer) != -1) {
+                outputStream.write(buffer);
+            }
+            outputStream.flush();
+            fis.close();
+        } catch (Exception ex) {
+            ex.printStackTrace();
         }
-
-        bufferStream.close();
-        outputStream.flush();
     }
 }

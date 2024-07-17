@@ -14,6 +14,7 @@ mdfs:
     path: ${user.home}/mdfs
     isSync: true
     backupUrl: http://localhost:8081/upload
+    autoMd5: true
 
 logging:
     level:
