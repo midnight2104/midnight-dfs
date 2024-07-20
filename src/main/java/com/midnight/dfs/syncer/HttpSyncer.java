@@ -1,4 +1,4 @@
-package com.midnight.dfs;
+package com.midnight.dfs.syncer;
 
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.HttpEntity;
@@ -12,16 +12,19 @@ import org.springframework.web.client.RestTemplate;
 
 import java.io.File;
 
+
 @Component
 public class HttpSyncer {
 
     public final static String XFILENAME = "X-Filename";
+    public final static String XORIGFILENAME = "X-Orig-Filename";
 
-    public String sync(File file, String url) {
+    public String sync(File file, String url, String originalFilename) {
         RestTemplate restTemplate = new RestTemplate();
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
         headers.add(XFILENAME, file.getName());
+        headers.add(XORIGFILENAME, originalFilename);
 
         MultipartBodyBuilder builder = new MultipartBodyBuilder();
         builder.part("file", new FileSystemResource(file));

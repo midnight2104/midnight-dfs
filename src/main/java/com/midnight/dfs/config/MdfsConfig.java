@@ -1,4 +1,4 @@
-package com.midnight.dfs;
+package com.midnight.dfs.config;
 
 import jakarta.servlet.MultipartConfigElement;
 import org.springframework.boot.web.servlet.MultipartConfigFactory;

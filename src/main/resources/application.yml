@@ -1,24 +1,19 @@
 spring:
     application:
-        name: midnight-dfs
-    web:
-        resources:
-            static-locations: classpath:/static/,classpath:/resources/static/
-
-
-    servlet:
-        multipart:
-            max-file-size: 10MB
+        name: mdfs
 
 mdfs:
     path: ${user.home}/mdfs
-    isSync: true
-    backupUrl: http://localhost:8081/upload
+    syncBackup: false
     autoMd5: true
+    group: C8090
+    backupUrl: http://localhost:8091/upload
+    downloadUrl: http://localhost:8090/download
 
-logging:
-    level:
-        root: info
-        com: info
-        javax: info
-        sun: info
+rocketmq:
+    name-server: localhost:9876
+    producer:
+        group: mdfs-producer
+
+server:
+    port: 8090
